@@ -4,6 +4,8 @@
 
 import { cfg } from "./config.js";
 import { MessageFlags } from "discord.js";
+import { sheets } from "./googleClients.js";
+import { withRetry } from "./sheets.js";
 
 // Sheet title to write to
 const RAW_SHEET_NAME = "Raw Discord Data";
@@ -42,16 +44,19 @@ function hasOfficerRole(member) {
 }
 
 // Ensure the target sheet exists (create if missing)
-async function ensureRawSheetExists(sheets) {
-  const meta = await sheets.spreadsheets.get({ spreadsheetId: cfg.google.sheetId });
+async function ensureRawSheetExists() {
+  const meta = await withRetry(
+    () => sheets.spreadsheets.get({ spreadsheetId: cfg.google.sheetId }),
+    "ensureRawSheetExists.get"
+  );
   const found = meta.data.sheets?.find(s => s.properties?.title === RAW_SHEET_NAME);
   if (found) return;
-  await sheets.spreadsheets.batchUpdate({
+  await withRetry(() => sheets.spreadsheets.batchUpdate({
     spreadsheetId: cfg.google.sheetId,
     requestBody: {
       requests: [{ addSheet: { properties: { title: RAW_SHEET_NAME } } }]
     }
-  });
+  }), "ensureRawSheetExists.addSheet");
 }
 
 export async function handleRosterExport(interaction) {
@@ -99,22 +104,20 @@ export async function handleRosterExport(interaction) {
 
   rows.sort((a, b) => (a[5] || "").localeCompare(b[5] || ""));
 
-  const { sheets } = await import("./googleClients.js");
-
-  await ensureRawSheetExists(sheets);
+  await ensureRawSheetExists();
 
   try {
-    await sheets.spreadsheets.values.clear({
+    await withRetry(() => sheets.spreadsheets.values.clear({
       spreadsheetId: cfg.google.sheetId,
       range: `${a1Sheet(RAW_SHEET_NAME)}A:Z`
-    });
+    }), "exportRoster.clear");
 
-    await sheets.spreadsheets.values.update({
+    await withRetry(() => sheets.spreadsheets.values.update({
       spreadsheetId: cfg.google.sheetId,
       range: `${a1Sheet(RAW_SHEET_NAME)}A1`,
       valueInputOption: "RAW", // plain text
       requestBody: { values: [header, ...rows] }
-    });
+    }), "exportRoster.update");
 
     await interaction.editReply({ content: `Exported ${rows.length} members to '${RAW_SHEET_NAME}'.` });
   } catch (err) {

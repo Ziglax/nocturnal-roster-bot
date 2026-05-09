@@ -2,30 +2,12 @@
 
 import fs from "fs";
 import axios from "axios";
-import { google } from "googleapis";
+import { drive } from "./googleClients.js";
+import { cfg } from "./config.js";
 
-// --- Environment ---
-const TARGET_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID; // single channel ID to watch
-const GDRIVE_FOLDER_ID = process.env.GDRIVE_FOLDER_ID;   // Drive folder to upload into
-const ATTACHMENT_DELAY =
-  parseInt(process.env.ATTACHMENT_DELAY, 10) || 1000000; // default delay in ms
-
-// --- Google Drive client ---
-const privateKey = process.env.GOOGLE_PRIVATE_KEY_BASE64
-  ? Buffer.from(process.env.GOOGLE_PRIVATE_KEY_BASE64, "base64").toString("utf8")
-  : (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
-
-const auth = new google.auth.GoogleAuth({
-  credentials: {
-    client_email: process.env.GOOGLE_CLIENT_EMAIL,
-    private_key: privateKey,
-  },
-  scopes: [
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/spreadsheets",
-  ],
-});
-const drive = google.drive({ version: "v3", auth });
+const channelIds = new Set(cfg.discord.channelIds);
+const driveFolderId = cfg.google.driveFolderId;
+const delayMs = cfg.backups.delayMs;
 
 // --- Deduplication state ---
 const processedAttachments = new Set();
@@ -38,7 +20,7 @@ async function uploadToDrive(filePath, fileName) {
     const extension = fileName.split(".").pop();
     const newFileName = `${baseName}_${timestamp}.${extension}`;
 
-    const fileMetadata = { name: newFileName, parents: [GDRIVE_FOLDER_ID] };
+    const fileMetadata = { name: newFileName, parents: [driveFolderId] };
     const media = {
       mimeType: extension === "zip" ? "application/zip" : "application/json",
       body: fs.createReadStream(filePath),
@@ -98,17 +80,25 @@ async function processAttachment(attachment, channel) {
 
 // --- Public: attach listeners to a Discord client ---
 export function attachBackups(client) {
+  if (!channelIds.size) {
+    console.warn("[Backups] No DISCORD_CHANNEL_ID configured; backup watcher disabled");
+    return;
+  }
+  if (!driveFolderId) {
+    console.warn("[Backups] No GDRIVE_FOLDER_ID configured; uploads will fail");
+  }
+
   client.on("messageCreate", (message) => {
-    if (!TARGET_CHANNEL_ID || message.channel.id !== TARGET_CHANNEL_ID) return;
+    if (!channelIds.has(message.channel.id)) return;
     setTimeout(async () => {
       for (const attachment of message.attachments.values()) {
         await processAttachment(attachment, message.channel);
       }
-    }, ATTACHMENT_DELAY);
+    }, delayMs);
   });
 
   client.on("messageUpdate", async (oldMessage, newMessage) => {
-    if (!TARGET_CHANNEL_ID || newMessage.channel.id !== TARGET_CHANNEL_ID) return;
+    if (!channelIds.has(newMessage.channel.id)) return;
 
     if (oldMessage.partial) oldMessage = await oldMessage.fetch();
     if (newMessage.partial) newMessage = await newMessage.fetch();
@@ -121,5 +111,5 @@ export function attachBackups(client) {
     }
   });
 
-  console.log(`[Backups] Watching channel ${TARGET_CHANNEL_ID} with delay ${ATTACHMENT_DELAY}ms`);
+  console.log(`[Backups] Watching channel(s) [${[...channelIds].join(",")}] with delay ${delayMs}ms`);
 }

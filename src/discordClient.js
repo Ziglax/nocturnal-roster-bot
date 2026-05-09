@@ -43,10 +43,14 @@ export async function startBot() {
     partials: [Partials.Channel, Partials.Message],
   });
 
-  client.once("ready", () => {
+  client.once("clientReady", () => {
     console.log(`Logged in as ${client.user.tag}`);
-    console.log(`[Backups] Channel: ${process.env.DISCORD_CHANNEL_ID || "(unset)"} • Delay: ${process.env.ATTACHMENT_DELAY || "1000000"}ms`);
+    console.log(`[Backups] Channels: [${cfg.discord.channelIds.join(",") || "(unset)"}] • Delay: ${cfg.backups.delayMs}ms`);
   });
+
+  client.on("error", (err) => console.error("[client] error:", err));
+  client.on("shardError", (err) => console.error("[shard] error:", err));
+  client.on("warn", (msg) => console.warn("[client] warn:", msg));
 
   // Roster interactions
   client.on("interactionCreate", handleRosterInteraction);

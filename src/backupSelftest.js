@@ -1,6 +1,6 @@
 // Slash command /backup test: validates channel access and send-permission for the target backup channel.
 
-import { SlashCommandBuilder, ChannelType, PermissionFlagsBits } from "discord.js";
+import { SlashCommandBuilder, ChannelType, PermissionFlagsBits, MessageFlags } from "discord.js";
 
 export const backupSelftestCommandJSON = new SlashCommandBuilder()
   .setName("backup")
@@ -10,16 +10,25 @@ export const backupSelftestCommandJSON = new SlashCommandBuilder()
     .setDescription("Validate backup channel access and permissions"))
   .toJSON();
 
+function hasOfficerRole(member) {
+  return !!member?.roles?.cache?.some(r => r.name === "Officer");
+}
+
 export async function handleBackupSelftest(interaction) {
   if (!interaction.isChatInputCommand() || interaction.commandName !== "backup" || interaction.options.getSubcommand() !== "test") return;
 
-  const targetId = process.env.DISCORD_CHANNEL_ID || "";
-  if (!targetId) {
-    await interaction.reply({ content: "DISCORD_CHANNEL_ID is not set.", ephemeral: true });
+  if (!hasOfficerRole(interaction.member)) {
+    await interaction.reply({ content: "You need the **Officer** role to run this command.", flags: MessageFlags.Ephemeral });
     return;
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  const targetId = process.env.DISCORD_CHANNEL_ID || "";
+  if (!targetId) {
+    await interaction.reply({ content: "DISCORD_CHANNEL_ID is not set.", flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   try {
     const ch = await interaction.client.channels.fetch(targetId);
