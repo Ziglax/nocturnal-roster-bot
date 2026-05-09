@@ -1,27 +1,15 @@
-version: '3.9'
 services:
   discord-bot:
     build: .
     container_name: discord-bot
     restart: unless-stopped
-    environment:
-      # Discord
-      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
-      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
-      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID}
-      # Option: single or comma-separated channel IDs to watch for backups
-      DISCORD_CHANNEL_ID: ${DISCORD_CHANNEL_ID}
-      # Google
-      GOOGLE_SHEET_ID: ${GOOGLE_SHEET_ID}
-      GOOGLE_CLIENT_EMAIL: ${GOOGLE_CLIENT_EMAIL}
-      # Prefer BASE64 for private key; fallback to GOOGLE_PRIVATE_KEY with \n
-      GOOGLE_PRIVATE_KEY_BASE64: ${GOOGLE_PRIVATE_KEY_BASE64}
-      GOOGLE_PRIVATE_KEY: ${GOOGLE_PRIVATE_KEY}
-      GDRIVE_FOLDER_ID: ${GDRIVE_FOLDER_ID}
-      # Backups
-      ATTACHMENT_DELAY: ${ATTACHMENT_DELAY:-800}
+    env_file: .env
     volumes:
-      - ./access.txt:/app/access.txt:ro
-    # Ports only for local health; Discord interactions do not need ingress
+      # Source code, configs, log.txt — live from the host. Code changes only need a restart.
+      - ./:/app
+      # Anonymous volume preserves the image's node_modules instead of letting the host
+      # bind-mount mask it (host doesn't necessarily have node_modules, and even if it did,
+      # native deps may differ between host OS and Alpine).
+      - /app/node_modules
     ports:
       - "3000:3000"

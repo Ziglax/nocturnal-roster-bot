@@ -27,6 +27,7 @@ import {
   MessageFlags
 } from "discord.js";
 import { handleRosterExport } from "./exportRoster.js";
+import { log } from "./logger.js";
 
 // ---- Constants ----
 const CLASS_LIST = [
@@ -367,6 +368,18 @@ export async function handleRosterInteraction(interaction) {
     const sheetId = await getRosterSheetId();
     await writeSingleCellNoteByRC(sheetId, rowNumber - 1, classIndex1 - 1, newClassNote);
 
+    log.event(`roster.${sub}`, {
+      user: displayName,
+      userId: discordId,
+      row: rowNumber,
+      char: charName,
+      class: klass,
+      level,
+      aa: aa || undefined,
+      access: picked.length ? picked.join(",") : undefined,
+      url: finalUrl || undefined,
+    });
+
     const linkInfo = finalUrl ? ` • <${finalUrl}>` : "";
     await interaction.editReply({
       content: `${sub === "add" ? "Saved" : "Updated"} • ${klass}: \`${displayLabel}\`${linkInfo}${aa ? ` • AA=${aa}` : ""}${picked.length ? ` • Access=[${accessJoined}]` : ""}`
@@ -410,6 +423,15 @@ export async function handleRosterInteraction(interaction) {
       return;
     }
     await batchUpdateCells(requests);
+
+    log.event("roster.remove", {
+      user: displayName,
+      userId: discordId,
+      row: rowNumber,
+      char: name,
+      cellsCleared: requests.length,
+    });
+
     await interaction.editReply({ content: `Removed **${name}** from your row (${requests.length} cell${requests.length > 1 ? "s" : ""} cleared, notes included).` });
     return;
   }

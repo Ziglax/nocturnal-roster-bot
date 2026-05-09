@@ -4,6 +4,7 @@ import fs from "fs";
 import axios from "axios";
 import { drive } from "./googleClients.js";
 import { cfg } from "./config.js";
+import { log } from "./logger.js";
 
 const channelIds = new Set(cfg.discord.channelIds);
 const driveFolderId = cfg.google.driveFolderId;
@@ -32,10 +33,10 @@ async function uploadToDrive(filePath, fileName) {
       fields: "id",
     });
 
-    console.log(`✅ [Drive] Uploaded: ${newFileName} (ID: ${response.data.id})`);
+    log.event("backup.uploaded", { file: newFileName, driveId: response.data.id });
     return true;
   } catch (err) {
-    console.error(`❌ [Drive] Upload Error: ${err.message}`);
+    log.error("backup.uploadFailed", { file: fileName, error: err.message });
     return false;
   }
 }
@@ -43,19 +44,19 @@ async function uploadToDrive(filePath, fileName) {
 // --- Single attachment processing (download → upload → cleanup) ---
 async function processAttachment(attachment, channel) {
   if (processedAttachments.has(attachment.id)) {
-    console.log(`⚠️ [Backup] Already processed: ${attachment.name} (${attachment.id}). Skipping.`);
+    log.info("backup.skipDuplicate", { file: attachment.name, attachmentId: attachment.id });
     return false;
   }
   processedAttachments.add(attachment.id);
 
   if (!attachment.name.endsWith(".zip") && !attachment.name.endsWith(".json")) {
-    console.log(`❌ [Backup] Unsupported file type: ${attachment.name}`);
+    log.info("backup.skipUnsupported", { file: attachment.name });
     return false;
   }
 
   const filePath = `./${attachment.name}`;
   try {
-    console.log(`📝 [Backup] Detected attachment: ${attachment.name}`);
+    log.event("backup.detected", { file: attachment.name, attachmentId: attachment.id });
 
     const writer = fs.createWriteStream(filePath);
     const response = await axios.get(attachment.url, { responseType: "stream" });
@@ -65,14 +66,14 @@ async function processAttachment(attachment, channel) {
       writer.on("finish", resolve);
       writer.on("error", reject);
     });
-    console.log(`📥 [Backup] Downloaded: ${filePath}`);
+    log.info("backup.downloaded", { file: attachment.name });
 
     const ok = await uploadToDrive(filePath, attachment.name);
     fs.unlink(filePath, () => {});
     if (ok) channel.send(`✅ Uploaded **${attachment.name}** to Drive.`).catch(() => {});
     return ok;
   } catch (err) {
-    console.error(`❌ [Backup] Error with ${attachment.name}: ${err.message}`);
+    log.error("backup.processFailed", { file: attachment.name, error: err.message });
     try { fs.unlinkSync(filePath); } catch {}
     return false;
   }
@@ -81,11 +82,11 @@ async function processAttachment(attachment, channel) {
 // --- Public: attach listeners to a Discord client ---
 export function attachBackups(client) {
   if (!channelIds.size) {
-    console.warn("[Backups] No DISCORD_CHANNEL_ID configured; backup watcher disabled");
+    log.warn("backup.disabled", { reason: "No DISCORD_CHANNEL_ID configured" });
     return;
   }
   if (!driveFolderId) {
-    console.warn("[Backups] No GDRIVE_FOLDER_ID configured; uploads will fail");
+    log.warn("backup.misconfigured", { reason: "No GDRIVE_FOLDER_ID configured; uploads will fail" });
   }
 
   client.on("messageCreate", (message) => {
@@ -111,5 +112,5 @@ export function attachBackups(client) {
     }
   });
 
-  console.log(`[Backups] Watching channel(s) [${[...channelIds].join(",")}] with delay ${delayMs}ms`);
+  log.info("backup.watching", { channels: [...channelIds].join(","), delayMs });
 }
